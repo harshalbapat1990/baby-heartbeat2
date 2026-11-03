@@ -175,6 +175,7 @@ function estimate(){
   var vals=[];
   for(var l=lmin-1;l<=lmax+1;l++)vals[l]=ac(l);
   for(l=lmin+1;l<lmax;l++){if(vals[l]>best&&vals[l]>vals[l-1]&&vals[l]>=vals[l+1]){best=vals[l];bl=l}}
+  if(bl){var l2=bl*2;if(l2<lmax){var p=l2,pv=ac(l2);for(var q=l2-1;q<=l2+1;q++){var v=ac(q);if(v>pv){pv=v;p=q}}vals[p-1]=ac(p-1);vals[p]=pv;vals[p+1]=ac(p+1);if(pv>best*1.05&&pv>vals[p-1]&&pv>=vals[p+1]){bl=p;best=pv}}}
   if(bl&&best>0.4){
     var a=vals[bl-1],b=vals[bl],c=vals[bl+1],d=(a-2*b+c),off=d?0.5*(a-c)/d:0;
     var bpm=60*fs/(bl+off);
@@ -188,7 +189,7 @@ function setBpm(b,msg){
   if(b==null){$('bpm').textContent='--';clearInterval(beatTimer);beatTimer=null;return}
   if(b>185){setBpm(null,'That reading looks like noise, not a heartbeat. Hold still and reposition the mic.');return}
   b=Math.round(b);$('bpm').textContent=b;
-  $('status').textContent=(b<105)?'This looks like your own pulse (a baby’s is usually 110–160). Try moving the mic to another spot.':msg;
+  $('status').textContent=(b<105)?'This looks like your own pulse (a baby’s is usually 110–160). Try moving the mic to another spot.':msg+(b>=100&&b<=180?' If this is your own pulse counted twice, it would be about '+Math.round(b/2)+'.':'');
   clearInterval(beatTimer);beatTimer=setInterval(pulse,60000/b);
 }
 })();
