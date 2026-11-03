@@ -171,11 +171,11 @@ function estimate(){
   if(e0<1e-9){setBpm(null,'No sound picked up yet. Press the mic closer or raise amplification.');return}
   function ac(l){var s=0;for(var k=0;k+l<N;k++)s+=x[k]*x[k+l];return s/e0}
   var best=0,bl=0;
-  var lmin=Math.floor(fs*60/200),lmax=Math.ceil(fs*60/90);
+  var lmin=Math.floor(fs*60/200),lmax=Math.ceil(fs*60/50);
   var vals=[];
   for(var l=lmin-1;l<=lmax+1;l++)vals[l]=ac(l);
-  for(l=lmin;l<=lmax;l++){if(vals[l]>best&&vals[l]>=vals[l-1]&&vals[l]>=vals[l+1]){best=vals[l];bl=l}}
-  if(bl&&best>0.3){
+  for(l=lmin+1;l<lmax;l++){if(vals[l]>best&&vals[l]>vals[l-1]&&vals[l]>=vals[l+1]){best=vals[l];bl=l}}
+  if(bl&&best>0.4){
     var a=vals[bl-1],b=vals[bl],c=vals[bl+1],d=(a-2*b+c),off=d?0.5*(a-c)/d:0;
     var bpm=60*fs/(bl+off);
     setBpm(bpm,best>0.5?'A steady rhythm detected.':'A possible rhythm. Hold still for a clearer reading.');
@@ -186,9 +186,9 @@ function estimate(){
 function setBpm(b,msg){
   $('status').textContent=msg;
   if(b==null){$('bpm').textContent='--';clearInterval(beatTimer);beatTimer=null;return}
+  if(b>185){setBpm(null,'That reading looks like noise, not a heartbeat. Hold still and reposition the mic.');return}
   b=Math.round(b);$('bpm').textContent=b;
-  var note=(b<100)?' This is slower than a baby’s usual rate, so it may be your own pulse.':'';
-  $('status').textContent=msg+note;
+  $('status').textContent=(b<105)?'This looks like your own pulse (a baby’s is usually 110–160). Try moving the mic to another spot.':msg;
   clearInterval(beatTimer);beatTimer=setInterval(pulse,60000/b);
 }
 })();
