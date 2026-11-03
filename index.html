@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Baby Heartbeat Listener</title>
+<style>
+:root{--bg:#fff7f6;--card:#ffffff;--ink:#3a2a2e;--mute:#8a7479;--acc:#e0587a;--acc2:#f4b4c4;--line:#f0dcdf;--warn:#fff1d6;--warnink:#6b4a00;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d1416;--card:#2a1d20;--ink:#f6e8ea;--mute:#b79ca2;--acc:#ff7a9a;--acc2:#7a3a4a;--line:#40292e;--warn:#3d3012;--warnink:#f3d98a}}
+:root[data-theme="dark"]{--bg:#1d1416;--card:#2a1d20;--ink:#f6e8ea;--mute:#b79ca2;--acc:#ff7a9a;--acc2:#7a3a4a;--line:#40292e;--warn:#3d3012;--warnink:#f3d98a}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:480px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.heart{text-align:center;padding:10px 0}
+.heart svg{width:84px;height:84px;color:var(--acc);transition:transform .08s}
+.heart.beat svg{transform:scale(1.18)}
+.bpm{font-size:44px;font-weight:700;line-height:1}
+.bpm small{font-size:14px;font-weight:400;color:var(--mute)}
+.status{color:var(--mute);font-size:14px;margin-top:6px;min-height:20px}
+canvas{width:100%;height:120px;display:block;background:var(--bg);border-radius:10px}
+button{width:100%;font-size:17px;font-weight:600;padding:14px;border-radius:14px;border:0;background:var(--acc);color:#fff;cursor:pointer}
+button.stop{background:var(--ink);color:var(--bg)}
+label{display:block;font-size:14px;margin:12px 0 4px;color:var(--mute)}
+input[type=range]{width:100%;accent-color:var(--acc)}
+select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.warn{background:var(--warn);color:var(--warnink);border-radius:12px;padding:12px;font-size:14px;line-height:1.45;margin-bottom:12px}
+ul{margin:6px 0 0;padding-left:20px;font-size:14px;line-height:1.55}
+.row{display:flex;justify-content:space-between;font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Baby Heartbeat Listener</h1>
+
+<div class="warn"><b>Please note:</b> this is a listening toy, not a medical device. A phone microphone often can’t pick up a baby’s heartbeat, and silence does <b>not</b> mean anything is wrong. Never use it for reassurance. If you feel less movement than usual or have any worry, call your doctor or go to the hospital.</div>
+
+<div class="card heart" id="heartCard">
+<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-9.6-9.2C.8 8.3 2.6 4.5 6.4 4.5c2 0 3.8 1.1 5.6 3.2 1.8-2.1 3.6-3.2 5.6-3.2 3.8 0 5.6 3.8 4 7.3C19.5 16.4 12 21 12 21z"/></svg>
+<div class="bpm"><span id="bpm">--</span> <small>beats/min (estimate)</small></div>
+<div class="status" id="status">Tap Start, then press the phone’s microphone against your lower belly.</div>
+</div>
+
+<div class="card">
+<canvas id="cv" width="600" height="240"></canvas>
+<div class="row"><span>last 8 seconds</span><span id="lvl">level: –</span></div>
+</div>
+
+<div class="card">
+<button id="go">Start listening</button>
+<label for="gain">Amplification: <span id="gv">15</span>×</label>
+<input type="range" id="gain" min="0" max="100" value="45">
+<label for="band">Sound filter</label>
+<select id="band">
+<option value="200">Heartbeat range (40–200 Hz)</option>
+<option value="400">Wider (40–400 Hz)</option>
+<option value="800">Widest (40–800 Hz)</option>
+</select>
+<label for="vol">Volume</label>
+<input type="range" id="vol" min="0" max="100" value="60">
+</div>
+
+<div class="card">
+<b>Tips</b>
+<ul>
+<li><b>Use headphones.</b> Without them the speaker feeds back into the mic and squeals.</li>
+<li>Works best after about 20 weeks, lying back in a very quiet room.</li>
+<li>Press the bottom edge of the phone (where the mic is) gently on bare skin, low on the belly, and move it slowly. Try a paper cone or cardboard tube for extra focus.</li>
+<li>The fast “whoosh‑whoosh” is the baby (about 110–160/min). A slower thump (about 60–90/min) is you. The estimate is rough and can be wrong.</li>
+<li>Stay still and hold your breath briefly if you can; breathing and rustling skin are loud.</li>
+</ul>
+</div>
+</main>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var ctx,stream,src,hp,lp,gainN,comp,an,outG,timer,running=false;
+var FS=100, N=800, env=new Float32Array(N), buf, tArr=[], lastBeatDraw=0;
+var cv=$('cv'), g=cv.getContext('2d');
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function gainVal(){return Math.pow(10,(+$('gain').value)/100*2)} // 1..100 log
+function setLabels(){ $('gv').textContent=Math.round(gainVal()); }
+function apply(){
+  setLabels();
+  if(!ctx)return;
+  gainN.gain.value=gainVal();
+  lp.frequency.value=+$('band').value;
+  outG.gain.value=Math.pow(+$('vol').value/100,2)*1.5;
+}
+['gain','band','vol'].forEach(function(i){$(i).addEventListener('input',apply)});
+setLabels();
+
+async function start(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}});
+  }catch(e){
+    $('status').textContent='Microphone access was blocked. Allow it in your browser settings and try again.';
+    return;
+  }
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  await ctx.resume();
+  src=ctx.createMediaStreamSource(stream);
+  hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=40;hp.Q.value=0.7;
+  lp=ctx.createBiquadFilter();lp.type='lowpass';lp.Q.value=0.7;
+  gainN=ctx.createGain();
+  comp=ctx.createDynamicsCompressor();
+  comp.threshold.value=-30;comp.ratio.value=8;comp.attack.value=0.003;comp.release.value=0.15;
+  an=ctx.createAnalyser();an.fftSize=1024;
+  outG=ctx.createGain();outG.gain.value=0;
+  src.connect(hp);hp.connect(lp);lp.connect(gainN);gainN.connect(comp);comp.connect(an);an.connect(outG);outG.connect(ctx.destination);
+  buf=new Float32Array(an.fftSize);
+  apply();
+  // fade in sound gently to avoid a sudden loud burst
+  var target=outG.gain.value;outG.gain.value=0;outG.gain.linearRampToValueAtTime(target,ctx.currentTime+1.5);
+  env.fill(0);tArr=[];
+  running=true;
+  $('go').textContent='Stop';$('go').className='stop';
+  $('status').textContent='Listening… hold still and move the mic slowly.';
+  timer=setInterval(tick,1000/FS);
+  requestAnimationFrame(draw);
+  setInterval(estimate,1000);
+}
+function stop(){
+  running=false;clearInterval(timer);
+  if(stream)stream.getTracks().forEach(function(t){t.stop()});
+  if(ctx)ctx.close();ctx=null;
+  $('go').textContent='Start listening';$('go').className='';
+  $('status').textContent='Stopped.';$('bpm').textContent='--';
+}
+$('go').addEventListener('click',function(){running?stop():start()});
+
+var smooth=0;
+function tick(){
+  if(!running)return;
+  an.getFloatTimeDomainData(buf);
+  var s=0;for(var i=0;i<buf.length;i++)s+=buf[i]*buf[i];
+  var rms=Math.sqrt(s/buf.length);
+  smooth=smooth*0.5+rms*0.5;
+  env.copyWithin(0,1);env[N-1]=smooth;
+  tArr.push(performance.now());if(tArr.length>N)tArr.shift();
+}
+function draw(){
+  if(!running)return;
+  var W=cv.width,H=cv.height;
+  g.clearRect(0,0,W,H);
+  var mx=0;for(var i=0;i<N;i++)if(env[i]>mx)mx=env[i];
+  var lvl=Math.min(1,mx*3);
+  $('lvl').textContent='level: '+Math.round(lvl*100)+'%';
+  var scale=mx>0.0005?(H*0.85)/mx:0;
+  g.strokeStyle=css('--acc');g.lineWidth=3;g.lineJoin='round';g.beginPath();
+  for(var j=0;j<N;j++){
+    var x=j/(N-1)*W,y=H-6-env[j]*scale;
+    j?g.lineTo(x,y):g.moveTo(x,y);
+  }
+  g.stroke();
+  requestAnimationFrame(draw);
+}
+function pulse(){
+  var c=$('heartCard');c.classList.add('beat');setTimeout(function(){c.classList.remove('beat')},110);
+}
+var beatTimer=null;
+function estimate(){
+  if(!running||tArr.length<N*0.9)return;
+  var el=(tArr[tArr.length-1]-tArr[0])/1000,fs=(tArr.length-1)/el;
+  // detrend envelope
+  var m=0;for(var i=0;i<N;i++)m+=env[i];m/=N;
+  var x=new Float32Array(N),e0=0;
+  for(i=0;i<N;i++){x[i]=env[i]-m;e0+=x[i]*x[i]}
+  if(e0<1e-9){setBpm(null,'No sound picked up yet. Press the mic closer or raise amplification.');return}
+  function ac(l){var s=0;for(var k=0;k+l<N;k++)s+=x[k]*x[k+l];return s/e0}
+  var best=0,bl=0;
+  var lmin=Math.floor(fs*60/200),lmax=Math.ceil(fs*60/90);
+  var vals=[];
+  for(var l=lmin-1;l<=lmax+1;l++)vals[l]=ac(l);
+  for(l=lmin;l<=lmax;l++){if(vals[l]>best&&vals[l]>=vals[l-1]&&vals[l]>=vals[l+1]){best=vals[l];bl=l}}
+  if(bl&&best>0.3){
+    var a=vals[bl-1],b=vals[bl],c=vals[bl+1],d=(a-2*b+c),off=d?0.5*(a-c)/d:0;
+    var bpm=60*fs/(bl+off);
+    setBpm(bpm,best>0.5?'A steady rhythm detected.':'A possible rhythm. Hold still for a clearer reading.');
+  }else{
+    setBpm(null,'No clear rhythm yet. Keep still and move the mic slowly.');
+  }
+}
+function setBpm(b,msg){
+  $('status').textContent=msg;
+  if(b==null){$('bpm').textContent='--';clearInterval(beatTimer);beatTimer=null;return}
+  b=Math.round(b);$('bpm').textContent=b;
+  var note=(b<100)?' This is slower than a baby’s usual rate, so it may be your own pulse.':'';
+  $('status').textContent=msg+note;
+  clearInterval(beatTimer);beatTimer=setInterval(pulse,60000/b);
+}
+})();
+</script>
+</body>
+</html>
